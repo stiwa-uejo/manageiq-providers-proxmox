@@ -1,0 +1,16 @@
+:ems:
+  :ems_proxmox:
+    :blacklisted_event_names: []
+    :event_handling:
+      :event_groups:
+:ems_refresh:
+  :proxmox:
+    :refresh_interval: 15.minutes
+:http_proxy:
+  :proxmox:
+    :host:
+    :password:
+    :port:
+    :user:
+:log:
+  :level_proxmox: info
