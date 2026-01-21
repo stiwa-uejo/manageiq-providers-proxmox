@@ -46,12 +46,16 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
   def vms
     collector.vms.each do |vm|
       host_ref = "node/#{vm["node"]}" if vm["node"]
+      template = vm["template"] == 1
+      raw_power_state = template ? "never" : vm["status"]
 
-      vm_obj = persister.vms.build(
+      vm_obj = persister.vms_and_templates.build(
+        :type            => "#{persister.manager.class}::#{template ? "Template" : "Vm"}",
         :ems_ref         => vm["id"],
         :uid_ems         => vm["id"],
         :name            => vm["name"],
-        :raw_power_state => vm["status"],
+        :template        => template,
+        :raw_power_state => raw_power_state,
         :host            => persister.hosts.lazy_find(host_ref),
         :location        => "#{vm["node"]}/#{vm["vmid"]}",
         :vendor          => "proxmox"
