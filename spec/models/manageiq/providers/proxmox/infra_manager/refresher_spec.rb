@@ -12,6 +12,7 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Refresher do
 
         assert_counts
         assert_ems_counts
+        assert_specific_cluster
         assert_specific_host
         assert_specific_vm
         assert_specific_template
@@ -20,10 +21,11 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Refresher do
   end
 
   def assert_counts
-    expect(Vm.count).to          eq(1)
-    expect(MiqTemplate.count).to eq(1)
-    expect(Host.count).to        eq(1)
-    expect(Storage.count).to     eq(2)
+    expect(Vm.count).to               eq(1)
+    expect(MiqTemplate.count).to      eq(1)
+    expect(Host.count).to             eq(1)
+    expect(Storage.count).to          eq(2)
+    expect(EmsCluster.count).to       eq(1)
   end
 
   def assert_ems_counts
@@ -31,6 +33,16 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Refresher do
     expect(ems.miq_templates.count).to eq(1)
     expect(ems.hosts.count).to         eq(1)
     expect(ems.storages.count).to      eq(2)
+    expect(ems.ems_clusters.count).to  eq(1)
+  end
+
+  def assert_specific_cluster
+    cluster = ems.ems_clusters.find_by(:ems_ref => "cluster")
+    expect(cluster).to have_attributes(
+      :name    => "Cluster",
+      :uid_ems => "cluster",
+      :ems_ref => "cluster"
+    )
   end
 
   def assert_specific_host
@@ -43,7 +55,8 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Refresher do
       :vmm_buildnumber => nil,
       :power_state     => "on",
       :uid_ems         => "pve",
-      :ems_ref         => "pve"
+      :ems_ref         => "pve",
+      :ems_cluster     => ems.ems_clusters.find_by(:ems_ref => "cluster")
     )
   end
 
@@ -54,6 +67,7 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Refresher do
       :name            => "vm-test",
       :location        => "pve/100",
       :host            => ems.hosts.find_by(:ems_ref => "pve"),
+      :ems_cluster     => ems.ems_clusters.find_by(:ems_ref => "cluster"),
       :uid_ems         => "100",
       :ems_ref         => "100",
       :power_state     => "off",
@@ -68,6 +82,7 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Refresher do
       :name            => "vm-template",
       :location        => "pve/101",
       :host            => ems.hosts.find_by(:ems_ref => "pve"),
+      :ems_cluster     => ems.ems_clusters.find_by(:ems_ref => "cluster"),
       :uid_ems         => "101",
       :ems_ref         => "101",
       :power_state     => "never",
