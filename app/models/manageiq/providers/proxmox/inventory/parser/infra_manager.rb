@@ -24,7 +24,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
 
     collector.nodes.each do |host|
       ems_ref = host["id"].gsub("node/", "")
-      persister.hosts.build(
+      host_obj = persister.hosts.build(
         :ems_ref     => ems_ref,
         :uid_ems     => ems_ref,
         :name        => host["node"],
@@ -32,6 +32,14 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
         :vmm_product => "Proxmox VE",
         :power_state => host["status"] == "online" ? "on" : "off",
         :ems_cluster => cluster
+      )
+
+      memory_mb = (host["maxmem"] / 1.megabyte) if host["maxmem"]
+
+      persister.host_hardwares.build(
+        :host            => host_obj,
+        :cpu_total_cores => host["maxcpu"],
+        :memory_mb       => memory_mb
       )
     end
   end
