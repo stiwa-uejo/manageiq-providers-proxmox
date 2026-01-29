@@ -146,4 +146,35 @@ class ManageIQ::Providers::Proxmox::InfraManager < ManageIQ::Providers::InfraMan
       :ignore_ssl => !verify_ssl
     )
   end
+
+  def remote_console_acquire_ticket(vm, userid, originating_server, protocol = 'vnc')
+    protocol = 'vnc' if protocol.to_s == 'html5'
+
+    raise MiqException::RemoteConsoleNotSupportedError, "#{protocol} remote console is not supported" unless protocol.to_s == 'vnc'
+
+    node_name, vmid = vm.location.split('/')
+
+    with_provider_connection do |connection|
+      vnc_response = connection.request(:post, "/nodes/#{node_name}/qemu/#{vmid}/vncproxy")
+      cluster_status = connection.request(:get, "/cluster/status")
+      node_data = cluster_status&.find { |item| item["type"] == "node" && item["name"] == node_name }
+
+      SystemConsole.force_vm_invalid_token(vm.id)
+      console_args = {
+        :user       => User.find_by(:userid => userid),
+        :vm_id      => vm.id,
+        :protocol   => 'vnc',
+        :secret     => vnc_response["ticket"],
+        :url_secret => SecureRandom.hex,
+        :ssl        => false
+      }
+      host_address = node_data&.dig("ip") || node_name
+      host_port = vnc_response["port"].to_i
+
+      SystemConsole.launch_proxy_if_not_local(console_args, originating_server, host_address, host_port)
+    end
+  rescue => err
+    _log.error("VNC ticket error: #{err.message}")
+    raise MiqException::RemoteConsoleNotSupportedError, err.message
+  end
 end
