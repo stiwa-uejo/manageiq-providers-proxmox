@@ -62,7 +62,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
     cluster = cluster_data ? persister.clusters.lazy_find(cluster_data["id"]) : nil
 
     collector.vms.each do |vm|
-      ems_ref  = vm["id"].gsub("qemu/", "")
+      ems_ref  = vm["id"]&.gsub("qemu/", "") || vm["vmid"]&.to_s
       host     = persister.hosts.lazy_find(vm["node"]) if vm["node"]
       template = vm["template"] == 1
       raw_power_state = template ? "never" : vm["status"]
