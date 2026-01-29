@@ -1,5 +1,6 @@
 class ManageIQ::Providers::Proxmox::InfraManager::Vm < ManageIQ::Providers::InfraManager::Vm
   include Operations
+  include RemoteConsole
 
   POWER_STATES = {
     "running"   => "on",
