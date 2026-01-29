@@ -43,6 +43,46 @@ http_interactions:
   recorded_at: Wed, 21 Jan 2026 14:42:09 GMT
 - request:
     method: get
+    uri: https://proxmox:8006/api2/json/cluster/status
+    body:
+      encoding: US-ASCII
+      string: ''
+    headers:
+      User-Agent:
+      - Faraday v1.10.4
+      Cookie:
+      - PVEAuthCookie=PVE:PROXMOX_USERNAME@pam:6970E5C1::hwe4AX75UrGKagAN1Un/Pn1axExb7RLGiKiXnjNvZ1LOgJu4jGtzz6szAf5uXOZhdhC/unFf3hUq1yM65zD5ACMxt1cUx5H1p1ZA1eFzKAhHqhc4D5yZB/CynHER2k84Njko0/BKg0/pO/HxMTLi/LcJcBqNmeOYCS53WS2iaukQXBa1rwCdDgLFenAL4zCipGf8nN7fXqSQU5G/0MXZ8W4fPTJzN2Z43HXGQgZq57sqk6U2m4LJDGq0RL4xEAhoQQ7ONF8K0VMB3sldTdO83oLgWgmlJYs0oPlx+rp4ugVuwM0gQsjOleQCZCtijpFyOFzXPhkeifHACZgZY2Y/xA==
+      Accept-Encoding:
+      - gzip;q=1.0,deflate;q=0.6,identity;q=0.3
+      Accept:
+      - "*/*"
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Cache-Control:
+      - max-age=0
+      Connection:
+      - Keep-Alive
+      Date:
+      - Wed, 21 Jan 2026 14:42:09 GMT
+      Pragma:
+      - no-cache
+      Server:
+      - pve-api-daemon/3.0
+      Content-Length:
+      - '245'
+      Content-Type:
+      - application/json;charset=UTF-8
+      Expires:
+      - Wed, 21 Jan 2026 14:42:09 GMT
+    body:
+      encoding: ASCII-8BIT
+      string: '{"data":[{"type":"cluster","nodes":1,"name":"Cluster","quorate":1,"version":2,"id":"cluster"},{"ip":"192.0.2.1","name":"pve","local":1,"type":"node","online":1,"id":"node/pve","level":"c","nodeid":1}]}'
+  recorded_at: Wed, 21 Jan 2026 14:42:09 GMT
+- request:
+    method: get
     uri: https://proxmox:8006/api2/json/cluster/resources
     body:
       encoding: US-ASCII
