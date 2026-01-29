@@ -25,14 +25,6 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::InfraManager < ManageI
     @connection ||= manager.connect
   end
 
-  def cluster_status_by_type
-    @cluster_status_by_type ||= cluster_status.group_by { |res| res["type"] }
-  end
-
-  def cluster_status
-    connection.request(:get, "/cluster/status")
-  end
-
   def cluster_resources_by_type
     @cluster_resources_by_type = cluster_resources.group_by { |res| res["type"] }
   end
