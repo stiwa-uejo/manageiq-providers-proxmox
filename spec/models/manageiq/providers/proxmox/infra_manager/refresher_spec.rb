@@ -106,6 +106,10 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Refresher do
       :ems_ref         => "pve",
       :ems_cluster     => ems.ems_clusters.find_by(:ems_ref => "cluster")
     )
+    expect(host.hardware).to have_attributes(
+      :cpu_total_cores => 2,
+      :memory_mb       => 1_967
+    )
   end
 
   def assert_specific_vm
