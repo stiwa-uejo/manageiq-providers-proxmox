@@ -20,13 +20,12 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::TargetCollection < Man
     return [] if references(:vms).blank?
     return @vms if @vms
 
-    @vms = references(:vms).filter_map do |vm_ref|
+    @vms ||= references(:vms).filter_map do |vm_ref|
       node, vmid = vm_ref.split("/")
       next unless node && vmid
 
-      status_data = connection.request(:get, "/nodes/#{node}/qemu/#{vmid}/status/current")
-      status_data&.merge("node" => node, "id" => "qemu/#{vmid}")
-    end.compact
+      collect_vm_details("node" => node, "vmid" => vmid.to_i, "id" => "qemu/#{vmid}")
+    end
   end
 
   def storages
