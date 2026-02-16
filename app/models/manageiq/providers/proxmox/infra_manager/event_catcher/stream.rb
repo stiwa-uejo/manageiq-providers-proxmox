@@ -52,22 +52,31 @@ class ManageIQ::Providers::Proxmox::InfraManager::EventCatcher::Stream
   end
 
   def poll_node_tasks(connection, node_name, &block)
-    params = build_task_query_params(node_name)
-    tasks = connection.request(:get, "/nodes/#{node_name}/tasks", params) || []
-
+    start = 0
     max_starttime = @last_starttime_per_node[node_name]
 
-    tasks.each do |task|
-      next unless vm_related_task?(task)
+    loop do
+      params = build_task_query_params(node_name).merge(:start => start)
+      tasks = connection.request(:get, "/nodes/#{node_name}/tasks", params) || []
 
-      task_starttime = task['starttime']
-      max_starttime = task_starttime if max_starttime.nil? || task_starttime > max_starttime
+      break if tasks.empty?
 
-      if task['endtime'].present?
-        process_completed_task(task, &block)
-      else
-        track_active_task(task)
+      tasks.each do |task|
+        next unless vm_related_task?(task)
+
+        task_starttime = task['starttime']
+        max_starttime = task_starttime if max_starttime.nil? || task_starttime > max_starttime
+
+        if task['endtime'].present?
+          process_completed_task(task, &block)
+        else
+          track_active_task(task)
+        end
       end
+
+      break if tasks.size < TASKS_LIMIT
+
+      start += TASKS_LIMIT
     end
 
     @last_starttime_per_node[node_name] = max_starttime if max_starttime
