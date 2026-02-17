@@ -1,2 +1,2 @@
-class ManageIQ::Providers::Proxmox::InfraManager::Snapshot < ::Snapshot
+class ManageIQ::Providers::Proxmox::InfraManager::Snapshot < Snapshot
 end

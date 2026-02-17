@@ -123,7 +123,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
         :parent         => parent,
         :name           => snapshot["name"],
         :description    => snapshot["description"],
-        :create_time    => snapshot["snaptime"] ? Time.at(snapshot["snaptime"].to_i) : nil,
+        :create_time    => snapshot["snaptime"] ? Time.zone.at(snapshot["snaptime"].to_i) : nil,
         :current        => snapshot["name"] == current_parent,
         :vm_or_template => vm_obj
       )

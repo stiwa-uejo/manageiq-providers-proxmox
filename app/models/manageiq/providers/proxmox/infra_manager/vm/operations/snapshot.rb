@@ -44,7 +44,7 @@ module ManageIQ::Providers::Proxmox::InfraManager::Vm::Operations::Snapshot
     }
   end
 
-  def raw_create_snapshot(name, desc = nil, memory = false)
+  def raw_create_snapshot(name, desc = nil, memory = false) # rubocop:disable Style/OptionalBooleanParameter
     raise MiqException::MiqVmSnapshotError, "Snapshot name is required" if name.blank?
 
     $proxmox_log.info("Creating snapshot for VM #{self.name} with name=#{name.inspect}, desc=#{desc.inspect}, memory=#{memory.inspect}")
