@@ -3,18 +3,10 @@ module ManageIQ::Providers::Proxmox::InfraManager::Vm::Operations::Snapshot
 
   included do
     supports :snapshots
-    supports :snapshot_create do
-      _("Cannot create snapshot of a template") if template?
-    end
-    supports :remove_snapshot do
-      _("No snapshots available to remove") unless snapshots.count.positive?
-    end
-    supports :revert_to_snapshot do
-      _("No snapshots available to revert to") unless snapshots.count.positive?
-    end
-    supports :remove_all_snapshots do
-      _("No snapshots available to remove") unless snapshots.count.positive?
-    end
+    supports(:snapshot_create) { _("Cannot create snapshot of a template") if template? }
+    supports(:remove_snapshot) { _("No snapshots available") unless snapshots.any? }
+    supports(:revert_to_snapshot) { _("No snapshots available") unless snapshots.any? }
+    supports(:remove_all_snapshots) { _("No snapshots available") unless snapshots.any? }
   end
 
   def params_for_create_snapshot
@@ -53,81 +45,69 @@ module ManageIQ::Providers::Proxmox::InfraManager::Vm::Operations::Snapshot
   end
 
   def raw_create_snapshot(name, desc = nil, memory = false)
-    $proxmox_log.info("Creating snapshot for VM #{self.name} with name=#{name.inspect}, desc=#{desc.inspect}, memory=#{memory.inspect}")
     raise MiqException::MiqVmSnapshotError, "Snapshot name is required" if name.blank?
 
-    with_provider_connection do |connection|
+    $proxmox_log.info("Creating snapshot for VM #{self.name} with name=#{name.inspect}, desc=#{desc.inspect}, memory=#{memory.inspect}")
+    with_snapshot_error_handling("create") do
       params = {:snapname => name}
       params[:description] = desc if desc.present?
       params[:vmstate] = 1 if memory && current_state == 'on'
-      upid = connection.request(:post, "/nodes/#{host.ems_ref}/qemu/#{ems_ref}/snapshot?#{URI.encode_www_form(params)}")
-      wait_for_task(connection, upid)
+      run_task(:post, "snapshot?#{URI.encode_www_form(params)}")
     end
-  rescue => err
-    error_message = parse_api_error(err)
-    create_notification(:vm_snapshot_failure, :error => error_message, :snapshot_op => "create")
-    raise MiqException::MiqVmSnapshotError, error_message
   end
 
   def raw_remove_snapshot(snapshot_id)
-    snapshot = snapshots.find_by(:id => snapshot_id)
-    raise _("Requested VM snapshot not found, unable to remove snapshot") unless snapshot
-
-    with_provider_connection do |connection|
-      upid = connection.request(:delete, "/nodes/#{host.ems_ref}/qemu/#{ems_ref}/snapshot/#{snapshot.name}")
-      wait_for_task(connection, upid)
-    end
-  rescue => err
-    error_message = parse_api_error(err)
-    create_notification(:vm_snapshot_failure, :error => error_message, :snapshot_op => "remove")
-    raise MiqException::MiqVmSnapshotError, error_message
+    snapshot = find_snapshot!(snapshot_id)
+    $proxmox_log.info("Removing snapshot #{snapshot.name.inspect} from VM #{name}")
+    with_snapshot_error_handling("remove") { run_task(:delete, "snapshot/#{snapshot.name}") }
   end
 
   def raw_revert_to_snapshot(snapshot_id)
-    raise MiqException::MiqVmError, unsupported_reason(:revert_to_snapshot) unless supports?(:revert_to_snapshot)
-
-    snapshot = snapshots.find_by(:id => snapshot_id)
-    raise _("Requested VM snapshot not found, unable to revert to snapshot") unless snapshot
-
-    with_provider_connection do |connection|
-      upid = connection.request(:post, "/nodes/#{host.ems_ref}/qemu/#{ems_ref}/snapshot/#{snapshot.name}/rollback")
-      wait_for_task(connection, upid)
-    end
-  rescue => err
-    error_message = parse_api_error(err)
-    create_notification(:vm_snapshot_failure, :error => error_message, :snapshot_op => "revert")
-    raise MiqException::MiqVmSnapshotError, error_message
+    snapshot = find_snapshot!(snapshot_id)
+    $proxmox_log.info("Reverting VM #{name} to snapshot #{snapshot.name.inspect}")
+    with_snapshot_error_handling("revert") { run_task(:post, "snapshot/#{snapshot.name}/rollback") }
   end
 
   def raw_remove_all_snapshots
-    raise MiqException::MiqVmError, unsupported_reason(:remove_all_snapshots) unless supports?(:remove_all_snapshots)
-
-    with_provider_connection do |connection|
-      snapshot_list = connection.request(:get, "/nodes/#{host.ems_ref}/qemu/#{ems_ref}/snapshot")
-      snapshot_list.each do |snapshot|
-        next if snapshot["name"] == "current"
-
-        upid = connection.request(:delete, "/nodes/#{host.ems_ref}/qemu/#{ems_ref}/snapshot/#{snapshot["name"]}")
-        wait_for_task(connection, upid)
-      end
+    $proxmox_log.info("Removing all snapshots from VM #{name}")
+    with_snapshot_error_handling("remove_all") do
+      snapshots.reject { |s| s.name == "current" }.each { |s| run_task(:delete, "snapshot/#{s.name}") }
     end
-  rescue => err
-    error_message = parse_api_error(err)
-    create_notification(:vm_snapshot_failure, :error => error_message, :snapshot_op => "remove_all")
-    raise MiqException::MiqVmSnapshotError, error_message
   end
 
   private
+
+  def vm_path
+    "/nodes/#{host.ems_ref}/qemu/#{ems_ref}"
+  end
+
+  def run_task(method, path)
+    with_provider_connection do |connection|
+      upid = connection.request(method, "#{vm_path}/#{path}")
+      wait_for_task(connection, upid)
+    end
+  end
+
+  def find_snapshot!(snapshot_id)
+    snapshots.find_by(:id => snapshot_id) || raise(_("Requested VM snapshot not found"))
+  end
+
+  def with_snapshot_error_handling(operation)
+    yield
+  rescue => err
+    error_message = parse_api_error(err)
+    create_notification(:vm_snapshot_failure, :error => error_message, :snapshot_op => operation)
+    raise MiqException::MiqVmSnapshotError, error_message
+  end
 
   def wait_for_task(connection, upid, timeout: 300, interval: 2)
     return unless upid.kind_of?(String) && upid.start_with?("UPID:")
 
     node = upid.split(":")[1]
-    encoded_upid = URI.encode_www_form_component(upid)
     deadline = Time.now.utc + timeout
 
     loop do
-      status = connection.request(:get, "/nodes/#{node}/tasks/#{encoded_upid}/status")
+      status = connection.request(:get, "/nodes/#{node}/tasks/#{upid}/status")
       case status["status"]
       when "stopped"
         return if status["exitstatus"] == "OK"
@@ -147,13 +127,10 @@ module ManageIQ::Providers::Proxmox::InfraManager::Vm::Operations::Snapshot
     msg = err.to_s
     return msg unless msg.start_with?("ApiError:")
 
-    json_str = msg.sub(/^ApiError:\s*/, "")
-    data = JSON.parse(json_str)
+    data = JSON.parse(msg.sub(/^ApiError:\s*/, ""))
     parts = []
     parts << data["message"].strip if data["message"].present?
-    if data["errors"].kind_of?(Hash)
-      data["errors"].each { |field, error| parts << "#{field}: #{error.strip}" }
-    end
+    data["errors"]&.each { |field, error| parts << "#{field}: #{error.strip}" }
     parts.any? ? parts.join(" ") : msg
   rescue JSON::ParserError
     msg
