@@ -21,16 +21,28 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::TargetCollection < Man
   end
 
   def node_details
-    @node_details ||= nodes.each_with_object({}) do |node, hash|
-      node_name = node["node"]
-      hash[node_name] = {
-        :status   => node_status(node_name),
-        :version  => node_version(node_name),
-        :storage  => node_storage(node_name),
-        :ip       => node_ip(node_name),
-        :networks => node_networks(node_name)
-      }
+    @node_details ||= begin
+      node_names = Set.new
+
+      nodes.each { |n| node_names << n["node"] }
+      vm_node_names.each { |name| node_names << name }
+
+      node_names.index_with do |node_name|
+        {
+          :status   => node_status(node_name),
+          :version  => node_version(node_name),
+          :storage  => node_storage(node_name),
+          :ip       => node_ip(node_name),
+          :networks => node_networks(node_name)
+        }
+      end
     end
+  end
+
+  def vm_node_names
+    return [] if references(:vms).blank?
+
+    references(:vms).filter_map { |vm_ref| vm_ref.split("/").first }
   end
 
   def vms
