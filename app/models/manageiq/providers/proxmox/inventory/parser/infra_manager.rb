@@ -52,23 +52,35 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
   end
 
   def storages
-    collector.storages.each do |storage|
-      ems_ref = storage["id"].gsub("storage/", "")
+    parsed_storages = {}
 
-      storage_obj = persister.storages.build(
-        :ems_ref            => ems_ref,
-        :name               => storage["storage"],
-        :store_type         => storage["plugintype"],
-        :total_space        => storage["maxdisk"],
-        :free_space         => storage["maxdisk"].to_i - storage["disk"].to_i,
-        :multiplehostaccess => storage["shared"] == 1,
-        :location           => storage["storage"]
-      )
+    collector.node_details.each do |node_name, details|
+      node_storages = details[:storage] || []
 
-      persister.host_storages.build(
-        :storage => storage_obj,
-        :host    => persister.hosts.lazy_find(storage["node"])
-      )
+      node_storages.each do |storage|
+        next unless storage["enabled"] == 1
+
+        storage_name = storage["storage"]
+        shared = storage["shared"] == 1
+        ems_ref = shared ? storage_name : "#{node_name}/#{storage_name}"
+
+        unless parsed_storages[ems_ref]
+          parsed_storages[ems_ref] = persister.storages.build(
+            :ems_ref            => ems_ref,
+            :name               => shared ? storage_name : "#{storage_name} (#{node_name})",
+            :store_type         => storage["type"],
+            :total_space        => storage["total"],
+            :free_space         => storage["avail"],
+            :multiplehostaccess => shared,
+            :location           => storage_name
+          )
+        end
+
+        persister.host_storages.build(
+          :storage => persister.storages.lazy_find(ems_ref),
+          :host    => persister.hosts.lazy_find(node_name)
+        )
+      end
     end
   end
 
@@ -86,6 +98,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
       template = vm["template"] == 1
       config   = vm["config"] || {}
       status   = vm["status"] || {}
+      node_name = vm["node"]
 
       vm_obj = persister.vms_and_templates.build(
         :type            => "#{persister.manager.class}::#{template ? "Template" : "Vm"}",
@@ -94,16 +107,16 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
         :name            => vm["name"],
         :template        => template,
         :raw_power_state => template ? "never" : (status["qmpstatus"] || vm["status"]),
-        :host            => persister.hosts.lazy_find(vm["node"]),
+        :host            => persister.hosts.lazy_find(node_name),
         :ems_cluster     => cluster,
-        :location        => "#{vm["node"]}/#{vm["vmid"]}",
+        :location        => "#{node_name}/#{vm["vmid"]}",
         :vendor          => "proxmox",
         :description     => config["description"],
         :tools_status    => parse_tools_status(config, vm["agent_info"])
       )
 
       hardware = parse_hardware(vm_obj, config, status)
-      parse_disks(hardware, config)
+      parse_disks(hardware, config, node_name)
       parse_networks(hardware, vm)
       parse_operating_system(vm_obj, vm["agent_info"], config)
       parse_snapshots(vm_obj, vm["snapshots"])
@@ -157,7 +170,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
     )
   end
 
-  def parse_disks(hardware, config)
+  def parse_disks(hardware, config, node_name)
     disk_keys = config.keys.grep(/^(scsi|ide|sata|virtio|nvme)\d+$/)
 
     disk_keys.each do |disk_id|
@@ -166,6 +179,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
 
       size_bytes = parse_disk_size(disk_str)
       storage_name = disk_str.split(":").first
+      storage_ems_ref = storage_ems_ref_for(storage_name, node_name)
 
       persister.disks.build(
         :hardware        => hardware,
@@ -175,9 +189,19 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
         :size            => size_bytes,
         :location        => disk_id,
         :filename        => disk_str.split(",").first,
-        :storage         => persister.storages.lazy_find(storage_name)
+        :storage         => persister.storages.lazy_find(storage_ems_ref)
       )
     end
+  end
+
+  def storage_ems_ref_for(storage_name, node_name)
+    node_details = collector.node_details[node_name]
+    return storage_name unless node_details
+
+    storage_info = node_details[:storage]&.find { |s| s["storage"] == storage_name && s["enabled"] == 1 }
+    return storage_name unless storage_info
+
+    storage_info["shared"] == 1 ? storage_name : "#{node_name}/#{storage_name}"
   end
 
   def parse_disk_size(disk_str)
@@ -254,6 +278,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
     else ostype
     end
   end
+
   private
 
   def parse_host_hardware(host_obj, host, status)
