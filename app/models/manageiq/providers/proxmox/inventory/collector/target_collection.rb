@@ -4,14 +4,6 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::TargetCollection < Man
     parse_targets!
   end
 
-  def cluster
-    @cluster ||= cluster_status&.find { |item| item["type"] == "cluster" }
-  end
-
-  def cluster_status
-    @cluster_status ||= connection.request(:get, "/cluster/status") || []
-  end
-
   def nodes
     return [] if references(:hosts).blank?
     return @nodes if @nodes
@@ -31,7 +23,6 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::TargetCollection < Man
         {
           :status   => node_status(node_name),
           :version  => node_version(node_name),
-          :storage  => node_storage(node_name),
           :ip       => node_ip(node_name),
           :networks => node_networks(node_name)
         }
@@ -39,10 +30,8 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::TargetCollection < Man
     end
   end
 
-  def vm_node_names
-    return [] if references(:vms).blank?
-
-    references(:vms).filter_map { |vm_ref| vm_ref.split("/").first }
+  def storages
+    @storages ||= cluster_resources_by_type["storage"] || []
   end
 
   def vms
@@ -57,51 +46,16 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::TargetCollection < Man
     end
   end
 
-  def storages
-    []
-  end
-
   def networks
-    []
+    @networks ||= cluster_resources_by_type["network"]
   end
 
   private
 
-  def connection
-    @connection ||= manager.connect
-  end
+  def vm_node_names
+    return [] if references(:vms).blank?
 
-  def node_status(node_name)
-    connection.request(:get, "/nodes/#{node_name}/status")
-  rescue => e
-    _log.warn("Failed to fetch status for node #{node_name}: #{e.message}")
-    nil
-  end
-
-  def node_version(node_name)
-    connection.request(:get, "/nodes/#{node_name}/version")
-  rescue => e
-    _log.warn("Failed to fetch version for node #{node_name}: #{e.message}")
-    nil
-  end
-
-  def node_storage(node_name)
-    connection.request(:get, "/nodes/#{node_name}/storage")
-  rescue => e
-    _log.warn("Failed to fetch storage for node #{node_name}: #{e.message}")
-    []
-  end
-
-  def node_networks(node_name)
-    connection.request(:get, "/nodes/#{node_name}/network")
-  rescue => e
-    _log.warn("Failed to fetch networks for node #{node_name}: #{e.message}")
-    []
-  end
-
-  def node_ip(node_name)
-    node_data = cluster_status.find { |item| item["type"] == "node" && item["name"] == node_name }
-    node_data&.dig("ip")
+    references(:vms).filter_map { |vm_ref| vm_ref.split("/").first }
   end
 
   def parse_targets!

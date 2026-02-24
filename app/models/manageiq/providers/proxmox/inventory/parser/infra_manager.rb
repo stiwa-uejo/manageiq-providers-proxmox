@@ -53,34 +53,41 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
 
   def storages
     parsed_storages = {}
+    parsed_host_storages = Set.new
 
-    collector.node_details.each do |node_name, details|
-      node_storages = details[:storage] || []
+    collector.storages.each do |storage|
+      next unless storage["status"] == "available"
 
-      node_storages.each do |storage|
-        next unless storage["enabled"] == 1
+      storage_name = storage["storage"]
+      node_name = storage["node"]
+      shared = storage["shared"] == 1
+      ems_ref = shared ? storage_name : "#{node_name}/#{storage_name}"
 
-        storage_name = storage["storage"]
-        shared = storage["shared"] == 1
-        ems_ref = shared ? storage_name : "#{node_name}/#{storage_name}"
+      unless parsed_storages[ems_ref]
+        total_space = storage["maxdisk"]
+        used_space = storage["disk"]
+        free_space = total_space && used_space ? total_space - used_space : nil
 
-        unless parsed_storages[ems_ref]
-          parsed_storages[ems_ref] = persister.storages.build(
-            :ems_ref            => ems_ref,
-            :name               => shared ? storage_name : "#{storage_name} (#{node_name})",
-            :store_type         => storage["type"],
-            :total_space        => storage["total"],
-            :free_space         => storage["avail"],
-            :multiplehostaccess => shared,
-            :location           => storage_name
-          )
-        end
-
-        persister.host_storages.build(
-          :storage => persister.storages.lazy_find(ems_ref),
-          :host    => persister.hosts.lazy_find(node_name)
+        parsed_storages[ems_ref] = persister.storages.build(
+          :ems_ref            => ems_ref,
+          :name               => shared ? storage_name : "#{storage_name} (#{node_name})",
+          :store_type         => storage["plugintype"],
+          :total_space        => total_space,
+          :free_space         => free_space,
+          :multiplehostaccess => shared,
+          :location           => storage_name
         )
       end
+
+      # Prevent duplicate host_storage entries for the same host/storage combination
+      host_storage_key = "#{node_name}/#{ems_ref}"
+      next if parsed_host_storages.include?(host_storage_key)
+
+      parsed_host_storages.add(host_storage_key)
+      persister.host_storages.build(
+        :storage => persister.storages.lazy_find(ems_ref),
+        :host    => persister.hosts.lazy_find(node_name)
+      )
     end
   end
 
@@ -195,10 +202,9 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
   end
 
   def storage_ems_ref_for(storage_name, node_name)
-    node_details = collector.node_details[node_name]
-    return storage_name unless node_details
-
-    storage_info = node_details[:storage]&.find { |s| s["storage"] == storage_name && s["enabled"] == 1 }
+    storage_info = collector.storages.find do |s|
+      s["storage"] == storage_name && s["node"] == node_name && s["status"] == "available"
+    end
     return storage_name unless storage_info
 
     storage_info["shared"] == 1 ? storage_name : "#{node_name}/#{storage_name}"
