@@ -53,7 +53,6 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
 
   def storages
     parsed_storages = {}
-    parsed_host_storages = Set.new
 
     collector.storages.each do |storage|
       next unless storage["status"] == "available"
@@ -79,11 +78,6 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
         )
       end
 
-      # Prevent duplicate host_storage entries for the same host/storage combination
-      host_storage_key = "#{node_name}/#{ems_ref}"
-      next if parsed_host_storages.include?(host_storage_key)
-
-      parsed_host_storages.add(host_storage_key)
       persister.host_storages.build(
         :storage => persister.storages.lazy_find(ems_ref),
         :host    => persister.hosts.lazy_find(node_name)
@@ -202,9 +196,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
   end
 
   def storage_ems_ref_for(storage_name, node_name)
-    storage_info = collector.storages.find do |s|
-      s["storage"] == storage_name && s["node"] == node_name && s["status"] == "available"
-    end
+    storage_info = collector.storages_by_name["#{node_name}/#{storage_name}"]
     return storage_name unless storage_info
 
     storage_info["shared"] == 1 ? storage_name : "#{node_name}/#{storage_name}"
@@ -337,7 +329,6 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
   def parse_host_switches(host_obj, hardware, networks)
     return if networks.blank?
 
-    switch_type = ManageIQ::Providers::Proxmox::InfraManager::HostVirtualSwitch.name
     switches = {}
 
     networks.each do |iface|
@@ -346,8 +337,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
       switch = persister.host_virtual_switches.build(
         :host    => host_obj,
         :uid_ems => iface["iface"],
-        :name    => iface["iface"],
-        :type    => switch_type
+        :name    => iface["iface"]
       )
       switches[iface["iface"]] = switch
 

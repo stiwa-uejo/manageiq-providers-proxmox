@@ -164,7 +164,6 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Refresher do
 
     # Test for virtual bridge
     switch = host.switches.first
-    expect(switch).to be_a(ManageIQ::Providers::Proxmox::InfraManager::HostVirtualSwitch)
     expect(switch.name).to be_present
     expect(switch.uid_ems).to be_present
 

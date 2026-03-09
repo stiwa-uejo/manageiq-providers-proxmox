@@ -11,6 +11,15 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector < ManageIQ::Providers::
     @cluster_resources_by_type ||= cluster_resources.group_by { |res| res["type"] }
   end
 
+  def storages_by_name
+    @storages_by_name ||= storages.each_with_object({}) do |storage, hash|
+      next unless storage["status"] == "available"
+
+      key = "#{storage["node"]}/#{storage["storage"]}"
+      hash[key] = storage
+    end
+  end
+
   def cluster_resources
     @cluster_resources ||= connection.request(:get, "/cluster/resources")
   end

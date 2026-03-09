@@ -31,7 +31,11 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::TargetCollection < Man
   end
 
   def storages
-    @storages ||= cluster_resources_by_type["storage"] || []
+    @storages ||= begin
+      all_storages = cluster_resources_by_type["storage"] || []
+      target_node_names = node_details.keys
+      all_storages.select { |s| target_node_names.include?(s["node"]) }
+    end
   end
 
   def vms
