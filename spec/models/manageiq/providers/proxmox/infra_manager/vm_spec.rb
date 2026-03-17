@@ -1,16 +1,14 @@
 describe ManageIQ::Providers::Proxmox::InfraManager::Vm do
   let(:ems)  { FactoryBot.create(:ems_proxmox) }
   let(:host) { FactoryBot.create(:host_proxmox, :ext_management_system => ems) }
-  let(:vm)   { FactoryBot.create(:vm_proxmox, :ext_management_system => ems, :host => host) }
+  let(:vm)   { FactoryBot.create(:vm_proxmox, :ext_management_system => ems, :host => host, :raw_power_state => raw_power_state, :tools_status => tools_status) }
 
-  let(:power_state_on)        { "running" }
-  let(:power_state_off)       { "stopped" }
-  let(:power_state_suspended) { "suspended" }
-  let(:power_state_paused)    { "paused" }
+  let(:raw_power_state) { "running" }
+  let(:tools_status) { nil }
 
   describe "#supports?(:shutdown_guest)" do
     context "when powered off" do
-      before { vm.update(:raw_power_state => power_state_off) }
+      let(:raw_power_state) { "stopped" }
 
       it "is not available" do
         expect(vm.supports?(:shutdown_guest)).to be false
@@ -19,30 +17,39 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Vm do
     end
 
     context "when powered on" do
-      before { vm.update(:raw_power_state => power_state_on) }
+      let(:raw_power_state) { "running" }
 
-      it "is not available if QEMU agent is not running" do
-        vm.update(:tools_status => "toolsNotRunning")
-        expect(vm.supports?(:shutdown_guest)).to be false
-        expect(vm.unsupported_reason(:shutdown_guest)).to include("agent is not running")
+      context "with the QEMU agent not running" do
+        let(:tools_status) { "toolsNotRunning" }
+
+        it "is not available" do
+          expect(vm.supports?(:shutdown_guest)).to be false
+          expect(vm.unsupported_reason(:shutdown_guest)).to include("agent is not running")
+        end
       end
 
-      it "is not available if QEMU agent is not installed" do
-        vm.update(:tools_status => "toolsNotInstalled")
-        expect(vm.supports?(:shutdown_guest)).to be false
-        expect(vm.unsupported_reason(:shutdown_guest)).to include("agent is not running")
+      context "with the QEMU agent not installed" do
+        let(:tools_status) { "toolsNotInstalled" }
+
+        it "is not available" do
+          expect(vm.supports?(:shutdown_guest)).to be false
+          expect(vm.unsupported_reason(:shutdown_guest)).to include("agent is not running")
+        end
       end
 
-      it "is available if QEMU agent is running" do
-        vm.update(:tools_status => "toolsOk")
-        expect(vm.supports?(:shutdown_guest)).to be true
+      context "with the QEMU agent running" do
+        let(:tools_status) { "toolsOk" }
+
+        it "is available" do
+          expect(vm.supports?(:shutdown_guest)).to be true
+        end
       end
     end
   end
 
   describe "#supports?(:reboot_guest)" do
     context "when powered off" do
-      before { vm.update(:raw_power_state => power_state_off) }
+      let(:raw_power_state) { "stopped" }
 
       it "is not available" do
         expect(vm.supports?(:reboot_guest)).to be false
@@ -51,7 +58,7 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Vm do
     end
 
     context "when suspended" do
-      before { vm.update(:raw_power_state => power_state_suspended) }
+      let(:raw_power_state) { "suspended" }
 
       it "is not available" do
         expect(vm.supports?(:reboot_guest)).to be false
@@ -60,30 +67,39 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Vm do
     end
 
     context "when powered on" do
-      before { vm.update(:raw_power_state => power_state_on) }
+      let(:raw_power_state) { "running" }
 
-      it "is not available if QEMU agent is not running" do
-        vm.update(:tools_status => "toolsNotRunning")
-        expect(vm.supports?(:reboot_guest)).to be false
-        expect(vm.unsupported_reason(:reboot_guest)).to include("agent is not running")
+      context "with the QEMU agent not running" do
+        let(:tools_status) { "toolsNotRunning" }
+
+        it "is not available" do
+          expect(vm.supports?(:reboot_guest)).to be false
+          expect(vm.unsupported_reason(:reboot_guest)).to include("agent is not running")
+        end
       end
 
-      it "is not available if QEMU agent is not installed" do
-        vm.update(:tools_status => "toolsNotInstalled")
-        expect(vm.supports?(:reboot_guest)).to be false
-        expect(vm.unsupported_reason(:reboot_guest)).to include("agent is not running")
+      context "with the QEMU agent not installed" do
+        let(:tools_status) { "toolsNotInstalled" }
+
+        it "is not available" do
+          expect(vm.supports?(:reboot_guest)).to be false
+          expect(vm.unsupported_reason(:reboot_guest)).to include("agent is not running")
+        end
       end
 
-      it "is available if QEMU agent is running" do
-        vm.update(:tools_status => "toolsOk")
-        expect(vm.supports?(:reboot_guest)).to be true
+      context "with the QEMU agent running" do
+        let(:tools_status) { "toolsOk" }
+
+        it "is available" do
+          expect(vm.supports?(:reboot_guest)).to be true
+        end
       end
     end
   end
 
   describe "#supports?(:reset)" do
     context "when powered off" do
-      before { vm.update(:raw_power_state => power_state_off) }
+      let(:raw_power_state) { "stopped" }
 
       it "is not available" do
         expect(vm.supports?(:reset)).to be false
@@ -92,23 +108,29 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Vm do
     end
 
     context "when powered on" do
-      before { vm.update(:raw_power_state => power_state_on) }
+      let(:raw_power_state) { "running" }
 
-      it "is available without QEMU agent" do
-        vm.update(:tools_status => "toolsNotInstalled")
-        expect(vm.supports?(:reset)).to be true
+      context "without the QEMU agent" do
+        let(:tools_status) { "toolsNotInstalled" }
+
+        it "is available" do
+          expect(vm.supports?(:reset)).to be true
+        end
       end
 
-      it "is available with QEMU agent" do
-        vm.update(:tools_status => "toolsOk")
-        expect(vm.supports?(:reset)).to be true
+      context "with the QEMU agent running" do
+        let(:tools_status) { "toolsOk" }
+
+        it "is available" do
+          expect(vm.supports?(:reset)).to be true
+        end
       end
     end
   end
 
   describe "#supports?(:terminate)" do
     context "when powered on" do
-      before { vm.update(:raw_power_state => power_state_on) }
+      let(:raw_power_state) { "running" }
 
       it "is not available" do
         expect(vm.supports?(:terminate)).to be false
@@ -117,7 +139,7 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Vm do
     end
 
     context "when suspended" do
-      before { vm.update(:raw_power_state => power_state_suspended) }
+      let(:raw_power_state) { "suspended" }
 
       it "is not available" do
         expect(vm.supports?(:terminate)).to be false
@@ -126,7 +148,7 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Vm do
     end
 
     context "when powered off" do
-      before { vm.update(:raw_power_state => power_state_off) }
+      let(:raw_power_state) { "stopped" }
 
       it "is available when connected to a provider" do
         expect(vm.supports?(:terminate)).to be true
@@ -134,7 +156,7 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Vm do
     end
 
     context "when not connected to a provider" do
-      let(:archived_vm) { FactoryBot.create(:vm_proxmox, :host => host) }
+      let(:archived_vm) { FactoryBot.create(:vm_proxmox, :host => host, :raw_power_state => "stopped") }
 
       it "is not available" do
         expect(archived_vm.supports?(:terminate)).to be false
