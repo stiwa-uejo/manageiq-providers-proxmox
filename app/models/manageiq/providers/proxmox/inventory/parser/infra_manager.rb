@@ -113,7 +113,8 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
         :location        => "#{node_name}/#{vm["vmid"]}",
         :vendor          => "proxmox",
         :description     => config["description"],
-        :tools_status    => parse_tools_status(config, vm["agent_info"])
+        :tools_status    => parse_tools_status(config, vm["agent_info"]),
+        :storages        => parse_storages(config, node_name)
       )
 
       hardware = parse_hardware(vm_obj, config, status)
@@ -172,26 +173,33 @@ class ManageIQ::Providers::Proxmox::Inventory::Parser::InfraManager < ManageIQ::
   end
 
   def parse_disks(hardware, config, node_name)
-    disk_keys = config.keys.grep(/^(scsi|ide|sata|virtio|nvme)\d+$/)
-
-    disk_keys.each do |disk_id|
-      disk_str = config[disk_id]
-      next if disk_str.include?("media=cdrom")
-
-      size_bytes = parse_disk_size(disk_str)
-      storage_name = disk_str.split(":").first
-      storage_ems_ref = storage_ems_ref_for(storage_name, node_name)
-
+    each_disk(config, node_name) do |disk_id, disk_str, storage_ems_ref|
       persister.disks.build(
         :hardware        => hardware,
         :device_name     => disk_id,
         :device_type     => "disk",
         :controller_type => disk_id.gsub(/\d+$/, ""),
-        :size            => size_bytes,
+        :size            => parse_disk_size(disk_str),
         :location        => disk_id,
         :filename        => disk_str.split(",").first,
         :storage         => persister.storages.lazy_find(storage_ems_ref)
       )
+    end
+  end
+
+  def parse_storages(config, node_name)
+    storage_ems_refs = []
+    each_disk(config, node_name) { |_, _, storage_ems_ref| storage_ems_refs << storage_ems_ref }
+    storage_ems_refs.uniq.map { |ref| persister.storages.lazy_find(ref) }
+  end
+
+  def each_disk(config, node_name)
+    config.keys.grep(/^(scsi|ide|sata|virtio|nvme)\d+$/).each do |disk_id|
+      disk_str = config[disk_id]
+      next if disk_str.include?("media=cdrom")
+
+      storage_name = disk_str.split(":").first
+      yield disk_id, disk_str, storage_ems_ref_for(storage_name, node_name)
     end
   end
 
