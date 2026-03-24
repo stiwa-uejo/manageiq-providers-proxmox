@@ -36,19 +36,25 @@ class ManageIQ::Providers::Proxmox::InfraManager::Provision < MiqProvision
   end
 
   def perform_refresh
-    $proxmox_log.info("Refreshing provider")
-    EmsRefresh.refresh(source.ext_management_system)
-    signal :find_destination_vm
+    new_vmid = phase_context[:new_vmid].to_s
+    $proxmox_log.info("Performing targeted refresh for new VM with ems_ref: #{new_vmid}")
+    EmsRefresh.refresh(InventoryRefresh::Target.new(
+                         :manager     => source.ext_management_system,
+                         :association => :vms_and_templates,
+                         :manager_ref => {:ems_ref => new_vmid}
+                       ))
+    signal :poll_destination_in_vmdb
   end
 
-  def find_destination_vm
-    vm = source.ext_management_system.vms.find_by(:name => dest_name)
+  def poll_destination_in_vmdb
+    new_vmid = phase_context[:new_vmid].to_s
+    vm = source.ext_management_system.vms.find_by(:ems_ref => new_vmid)
     if vm
-      $proxmox_log.info("Found VM: #{vm.name} (ems_ref: #{vm.ems_ref})")
+      $proxmox_log.info("Found VM in VMDB: #{vm.name} (ems_ref: #{vm.ems_ref})")
       phase_context[:destination_vm_id] = vm.id
       signal :finalize_destination
     else
-      $proxmox_log.info("VM #{dest_name} not found, retrying...")
+      $proxmox_log.info("VM with ems_ref #{new_vmid} not found in VMDB, retrying...")
       requeue_phase
     end
   end
@@ -57,7 +63,6 @@ class ManageIQ::Providers::Proxmox::InfraManager::Provision < MiqProvision
     vm = Vm.find(phase_context[:destination_vm_id])
     self.destination = vm
     vm.raw_start if get_option(:vm_auto_start)
-    update(:status => "Ok", :state => "finished")
     $proxmox_log.info("Provisioning complete: #{vm.name}")
     signal :post_create_destination
   end
