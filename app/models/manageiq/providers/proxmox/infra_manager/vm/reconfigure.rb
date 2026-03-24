@@ -85,7 +85,7 @@ module ManageIQ::Providers::Proxmox::InfraManager::Vm::Reconfigure
   end
 
   def add_disk(connection, config, spec)
-    controller = spec['controller_type'] || spec['new_controller_type'] || 'scsi'
+    controller = spec['controller_type'] || spec['new_controller_type'] || scsi_controller_default_type
     slot = next_slot(config, controller)
     storage = spec['datastore'] || storages.first&.location || 'local-lvm'
     size_gb = spec['disk_size_in_mb'].to_i / 1024
