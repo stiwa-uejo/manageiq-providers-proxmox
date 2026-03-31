@@ -99,6 +99,20 @@
           :data_type: :integer
       :display: :show
       :field_order:
+    :network:
+      :description: Network
+      :fields:
+        :vlan:
+          :values_from:
+            :options:
+              :vlans: true
+            :method: :allowed_vlans
+          :description: Bridge
+          :required: false
+          :display: :edit
+          :data_type: :string
+      :display: :show
+      :field_order:
     :hardware:
       :description: Hardware
       :fields:
@@ -204,4 +218,5 @@
   - :service
   - :environment
   - :hardware
+  - :network
   - :schedule
