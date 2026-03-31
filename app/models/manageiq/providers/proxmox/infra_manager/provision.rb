@@ -32,7 +32,17 @@ class ManageIQ::Providers::Proxmox::InfraManager::Provision < MiqProvision
   end
 
   def poll_clone_complete
-    clone_complete? ? signal(:perform_refresh) : requeue_phase
+    clone_complete? ? signal(:customize_clone) : requeue_phase
+  end
+
+  def customize_clone
+    $proxmox_log.info("Applying post-clone customization to VM #{phase_context[:new_vmid]}")
+    customize_cloned_vm
+    signal :perform_refresh
+  rescue => err
+    $proxmox_log.error("Post-clone customization failed: #{err.message}")
+    $proxmox_log.log_backtrace(err)
+    raise MiqException::MiqProvisionError, err.message
   end
 
   def perform_refresh
@@ -69,8 +79,8 @@ class ManageIQ::Providers::Proxmox::InfraManager::Provision < MiqProvision
 
   private
 
-  def with_provider_connection(&block)
-    source.ext_management_system.with_provider_connection(&block)
+  def with_provider_connection(...)
+    source.ext_management_system.with_provider_connection(...)
   end
 
   def clone_complete?

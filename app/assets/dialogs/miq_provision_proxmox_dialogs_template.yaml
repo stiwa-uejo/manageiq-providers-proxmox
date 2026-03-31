@@ -145,6 +145,15 @@
           :display: :edit
           :default: '2048'
           :data_type: :string
+        :renew_tpm:
+          :values:
+            false: 0
+            true: 1
+          :description: Renew TPM State on Clone
+          :required: false
+          :display: :edit
+          :default: true
+          :data_type: :boolean
       :display: :show
       :field_order:
     :schedule:
