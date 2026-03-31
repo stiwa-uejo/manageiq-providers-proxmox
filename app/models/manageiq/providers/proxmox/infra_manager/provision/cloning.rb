@@ -25,19 +25,17 @@ module ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning
 
   def start_clone(clone_opts)
     with_provider_connection do |connection|
-      src_node_id, template_vmid = source.location.split('/')
+      node_id, template_vmid = source.location.split('/')
       template_vmid ||= source.ems_ref
 
-      dest_node_id = destination_node_id || src_node_id
-
       new_vmid = connection.request(:get, "/cluster/nextid")
-      params = build_clone_params(new_vmid, clone_opts, dest_node_id, src_node_id)
+      params = build_clone_params(new_vmid, clone_opts)
 
-      task_upid = connection.request(:post, "/nodes/#{src_node_id}/qemu/#{template_vmid}/clone?#{URI.encode_www_form(params)}")
+      task_upid = connection.request(:post, "/nodes/#{node_id}/qemu/#{template_vmid}/clone?#{URI.encode_www_form(params)}")
 
       phase_context[:clone_task_upid] = task_upid
-      phase_context[:new_vmid]        = new_vmid
-      phase_context[:clone_node_id]   = dest_node_id
+      phase_context[:new_vmid] = new_vmid
+      phase_context[:clone_node_id] = node_id
     end
   end
 
@@ -168,7 +166,6 @@ module ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning
   def build_clone_params(new_vmid, clone_opts, dest_node_id = nil, src_node_id = nil)
     params = {:newid => new_vmid.to_i, :name => clone_opts[:name]}
     params[:description] = clone_opts[:description] if clone_opts[:description].present?
-    params[:target] = dest_node_id if dest_node_id.present? && dest_node_id != src_node_id
 
     if clone_opts[:full_clone]
       params[:full] = 1

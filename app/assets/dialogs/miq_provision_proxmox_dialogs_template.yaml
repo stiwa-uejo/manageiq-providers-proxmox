@@ -116,6 +116,11 @@
     :hardware:
       :description: Hardware
       :fields:
+        :allocated_disk_storage:
+          :description: Disk Size (GB)
+          :required: false
+          :display: :edit
+          :data_type: :integer
         :disk_format:
           :values_from:
             :method: :allowed_disk_formats
