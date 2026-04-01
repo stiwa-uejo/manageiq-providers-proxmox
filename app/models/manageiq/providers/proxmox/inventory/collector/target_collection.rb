@@ -85,7 +85,7 @@ class ManageIQ::Providers::Proxmox::Inventory::Collector::TargetCollection < Man
       case t
       when InventoryRefresh::Target
         case t.association
-        when :vms_and_templates
+        when :vms_and_templates, :vms
           add_target!(:vms, t.manager_ref[:ems_ref])
         end
       when Vm
