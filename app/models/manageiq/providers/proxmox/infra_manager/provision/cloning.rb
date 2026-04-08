@@ -41,19 +41,61 @@ module ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning
     end
   end
 
-  def customize_cloned_vm
+  # Starts hardware customization (config PUT)
+  def start_hardware_customization
     node_id  = phase_context[:clone_node_id]
     new_vmid = phase_context[:new_vmid]
     $proxmox_log.info("customize_cloned_vm options: #{options.inspect}")
+
     with_provider_connection do |connection|
       apply_hardware_customization(connection, node_id, new_vmid)
+    end
+  end
+
+  def start_resize_boot_disk
+    node_id  = phase_context[:clone_node_id]
+    new_vmid = phase_context[:new_vmid]
+
+    with_provider_connection do |connection|
       resize_boot_disk(connection, node_id, new_vmid)
-      handle_tpm_rekey(connection, node_id, new_vmid) if get_option(:renew_tpm)
+    end
+  end
+
+  def start_tpm_rekey
+    return unless get_option(:renew_tpm)
+
+    node_id  = phase_context[:clone_node_id]
+    new_vmid = phase_context[:new_vmid]
+
+    with_provider_connection do |connection|
+      handle_tpm_rekey(connection, node_id, new_vmid)
+    end
+  end
+
+  def customize_task_complete?
+    upid   = phase_context[:customize_task_upid]
+    return true if upid.nil?
+
+    node_id = phase_context[:clone_node_id]
+    with_provider_connection do |connection|
+      status = connection.request(:get, "/nodes/#{node_id}/tasks/#{URI.encode_uri_component(upid)}/status")
+      $proxmox_log.info("Customize task #{upid}: #{status['status']} (exit: #{status['exitstatus']})")
+
+      case status["status"]
+      when "stopped"
+        raise MiqException::MiqProvisionError, "Task failed: #{status['exitstatus']}" unless status["exitstatus"] == "OK"
+
+        phase_context[:customize_task_upid] = nil
+        true
+      else
+        false
+      end
     end
   end
 
   private
 
+  # Builds and PUTs the VM config. Returns the UPID when Proxmox returns one
   def apply_hardware_customization(connection, node_id, new_vmid)
     sockets = get_option(:number_of_sockets).to_i
     cores   = get_option(:cores_per_socket).to_i
@@ -78,7 +120,7 @@ module ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning
 
     $proxmox_log.info("Applying hardware customization to VM #{new_vmid}: #{params}")
     upid = connection.request(:put, "/nodes/#{node_id}/qemu/#{new_vmid}/config?#{URI.encode_www_form(params)}")
-    await_task(connection, node_id, upid) if upid.kind_of?(String) && upid.start_with?("UPID:")
+    upid if upid.kind_of?(String) && upid.start_with?("UPID:")
   end
 
   def handle_tpm_rekey(connection, node_id, new_vmid)
@@ -94,7 +136,7 @@ module ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning
     connection.request(:put, "/nodes/#{node_id}/qemu/#{new_vmid}/unlink?#{URI.encode_www_form(:idlist => 'tpmstate0', :force => 1)}")
 
     upid = connection.request(:put, "/nodes/#{node_id}/qemu/#{new_vmid}/config?#{URI.encode_www_form(:tpmstate0 => "#{target_storage}:0,version=#{version}")}")
-    await_task(connection, node_id, upid) if upid.kind_of?(String) && upid.start_with?("UPID:")
+    upid if upid.kind_of?(String) && upid.start_with?("UPID:")
   end
 
   def resize_boot_disk(connection, node_id, new_vmid)
@@ -114,7 +156,7 @@ module ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning
       increase_gb = requested_gb - current_gb
       $proxmox_log.info("Resizing boot disk #{disk_slot} of VM #{new_vmid}: +#{increase_gb}G (#{current_gb}G -> #{requested_gb}G)")
       upid = connection.request(:put, "/nodes/#{node_id}/qemu/#{new_vmid}/resize?#{URI.encode_www_form(:disk => disk_slot, :size => "+#{increase_gb}G")}")
-      await_task(connection, node_id, upid) if upid.kind_of?(String) && upid.start_with?("UPID:")
+      upid if upid.kind_of?(String) && upid.start_with?("UPID:")
     elsif requested_gb < current_gb
       $proxmox_log.warn("Requested disk size #{requested_gb}G is smaller than current #{current_gb}G for VM #{new_vmid} — skipping resize (Proxmox does not support shrinking)")
     end
@@ -138,25 +180,6 @@ module ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning
     return nil if storage_id.blank?
 
     Storage.find_by(:id => storage_id)&.location
-  end
-
-  def await_task(connection, node_id, upid, timeout: 300)
-    deadline = Time.now.utc + timeout
-    loop do
-      status = connection.request(:get, "/nodes/#{node_id}/tasks/#{URI.encode_uri_component(upid)}/status")
-      case status["status"]
-      when "stopped"
-        raise MiqException::MiqProvisionError, "Task failed: #{status['exitstatus']}" unless status["exitstatus"] == "OK"
-
-        return
-      when "running"
-        raise MiqException::MiqProvisionError, "Task timed out after #{timeout}s" if Time.now.utc > deadline
-
-        sleep(2)
-      else
-        raise MiqException::MiqProvisionError, "Unknown task status: #{status['status']}"
-      end
-    end
   end
 
   def destination_node_id

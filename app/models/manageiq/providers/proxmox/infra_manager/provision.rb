@@ -32,17 +32,52 @@ class ManageIQ::Providers::Proxmox::InfraManager::Provision < MiqProvision
   end
 
   def poll_clone_complete
-    clone_complete? ? signal(:customize_clone) : requeue_phase
+    clone_complete? ? signal(:customize_hardware) : requeue_phase
   end
 
-  def customize_clone
-    $proxmox_log.info("Applying post-clone customization to VM #{phase_context[:new_vmid]}")
-    customize_cloned_vm
-    signal :perform_refresh
+  def customize_hardware
+    $proxmox_log.info("Applying hardware customization to VM #{phase_context[:new_vmid]}")
+    upid = start_hardware_customization
+    phase_context[:customize_task_upid] = upid
+    signal :poll_customize_hardware_complete
   rescue => err
-    $proxmox_log.error("Post-clone customization failed: #{err.message}")
+    $proxmox_log.error("Hardware customization failed: #{err.message}")
     $proxmox_log.log_backtrace(err)
     raise MiqException::MiqProvisionError, err.message
+  end
+
+  def poll_customize_hardware_complete
+    customize_task_complete? ? signal(:resize_disk) : requeue_phase
+  end
+
+  def resize_disk
+    $proxmox_log.info("Resizing boot disk for VM #{phase_context[:new_vmid]}")
+    upid = start_resize_boot_disk
+    phase_context[:customize_task_upid] = upid
+    signal :poll_resize_disk_complete
+  rescue => err
+    $proxmox_log.error("Disk resize failed: #{err.message}")
+    $proxmox_log.log_backtrace(err)
+    raise MiqException::MiqProvisionError, err.message
+  end
+
+  def poll_resize_disk_complete
+    customize_task_complete? ? signal(:rekey_tpm) : requeue_phase
+  end
+
+  def rekey_tpm
+    $proxmox_log.info("Re-keying TPM for VM #{phase_context[:new_vmid]}")
+    upid = start_tpm_rekey
+    phase_context[:customize_task_upid] = upid
+    signal :poll_rekey_tpm_complete
+  rescue => err
+    $proxmox_log.error("TPM re-key failed: #{err.message}")
+    $proxmox_log.log_backtrace(err)
+    raise MiqException::MiqProvisionError, err.message
+  end
+
+  def poll_rekey_tpm_complete
+    customize_task_complete? ? signal(:perform_refresh) : requeue_phase
   end
 
   def perform_refresh

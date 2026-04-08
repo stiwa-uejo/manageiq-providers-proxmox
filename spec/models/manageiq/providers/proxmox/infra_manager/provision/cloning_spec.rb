@@ -26,7 +26,6 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning do
     )
   end
 
-  # Stub the provider connection so specs never hit the network
   let(:connection) { double("ProxmoxConnection") }
 
   before do
@@ -135,14 +134,26 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning do
   # ── apply_hardware_customization ────────────────────────────────────────────
 
   describe "#apply_hardware_customization" do
-    before do
-      # avoid await_task polling loop
-      allow(connection).to receive(:request).with(:put, anything).and_return(nil)
+    it "returns nil when no hardware options are set" do
+      expect(connection).not_to receive(:request)
+      result = provision.send(:apply_hardware_customization, connection, "vmpvetest", 101)
+      expect(result).to be_nil
     end
 
-    it "does nothing when no hardware options are set" do
-      expect(connection).not_to receive(:request)
-      provision.send(:apply_hardware_customization, connection, "vmpvetest", 101)
+    it "returns the UPID when Proxmox responds with one" do
+      provision.options[:vm_memory] = 4096
+      allow(connection).to receive(:request).with(:put, anything).and_return("UPID:vmpvetest:001:config:OK")
+
+      result = provision.send(:apply_hardware_customization, connection, "vmpvetest", 101)
+      expect(result).to eq("UPID:vmpvetest:001:config:OK")
+    end
+
+    it "returns nil when Proxmox responds without a UPID (sync task)" do
+      provision.options[:vm_memory] = 4096
+      allow(connection).to receive(:request).with(:put, anything).and_return(nil)
+
+      result = provision.send(:apply_hardware_customization, connection, "vmpvetest", 101)
+      expect(result).to be_nil
     end
 
     it "sends sockets, cores and memory to the config endpoint" do
@@ -166,9 +177,7 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning do
       allow(connection).to receive(:request).with(:get, /config/).and_return("net0" => "virtio=BC:24:11:E2:9F:14,bridge=vmbr0")
 
       expect(connection).to receive(:request).with(:put, satisfy do |url|
-        url.include?("net0=virtio%2Cbridge%3Dvmbr1") ||
-          url.include?("net0=virtio,bridge=vmbr1") ||
-          url =~ /net0=virtio.*vmbr1/
+        url =~ /net0=virtio.*vmbr1/
       end).and_return(nil)
 
       provision.send(:apply_hardware_customization, connection, "vmpvetest", 101)
@@ -212,9 +221,17 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning do
       )
     end
 
-    it "does nothing when no disk size requested" do
+    it "returns nil when no disk size requested" do
       expect(connection).not_to receive(:request).with(:put, anything)
-      provision.send(:resize_boot_disk, connection, "vmpvetest", 101)
+      expect(provision.send(:resize_boot_disk, connection, "vmpvetest", 101)).to be_nil
+    end
+
+    it "returns the UPID when Proxmox responds with one" do
+      provision.options[:allocated_disk_storage] = 20
+      allow(connection).to receive(:request).with(:put, anything).and_return("UPID:vmpvetest:002:resize:OK")
+
+      result = provision.send(:resize_boot_disk, connection, "vmpvetest", 101)
+      expect(result).to eq("UPID:vmpvetest:002:resize:OK")
     end
 
     it "sends a resize when requested size is larger than current" do
@@ -238,6 +255,48 @@ describe ManageIQ::Providers::Proxmox::InfraManager::Provision::Cloning do
       expect($proxmox_log).to receive(:warn).with(/smaller/)
       expect(connection).not_to receive(:request).with(:put, anything)
       provision.send(:resize_boot_disk, connection, "vmpvetest", 101)
+    end
+  end
+
+  # ── customize_task_complete? ────────────────────────────────────────────────
+
+  describe "#customize_task_complete?" do
+    it "returns true immediately when no task is pending" do
+      expect(provision.customize_task_complete?).to be(true)
+    end
+
+    it "returns true and clears the upid when the task has stopped successfully" do
+      provision.phase_context[:customize_task_upid] = "UPID:vmpvetest:001:config:OK"
+      provision.phase_context[:clone_node_id] = "vmpvetest"
+
+      allow(connection).to receive(:request).with(:get, /status/).and_return(
+        "status" => "stopped", "exitstatus" => "OK"
+      )
+
+      expect(provision.customize_task_complete?).to be(true)
+      expect(provision.phase_context[:customize_task_upid]).to be_nil
+    end
+
+    it "returns false while the task is still running" do
+      provision.phase_context[:customize_task_upid] = "UPID:vmpvetest:001:config:OK"
+      provision.phase_context[:clone_node_id] = "vmpvetest"
+
+      allow(connection).to receive(:request).with(:get, /status/).and_return(
+        "status" => "running", "exitstatus" => nil
+      )
+
+      expect(provision.customize_task_complete?).to be(false)
+    end
+
+    it "raises on task failure" do
+      provision.phase_context[:customize_task_upid] = "UPID:vmpvetest:001:config:OK"
+      provision.phase_context[:clone_node_id] = "vmpvetest"
+
+      allow(connection).to receive(:request).with(:get, /status/).and_return(
+        "status" => "stopped", "exitstatus" => "ERROR"
+      )
+
+      expect { provision.customize_task_complete? }.to raise_error(MiqException::MiqProvisionError)
     end
   end
 
